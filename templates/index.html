@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GHikari Toolbox - Desktop</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="{{ url_for('static', filename='js/socket.io.js') }}"></script>
+</head>
+<body class="pixel-theme">
+    <div class="app-container">
+        <header>
+            <div class="logo">💎 GHikari <span>Toolbox</span></div>
+            <div class="status-bar">
+                <span id="connection-status" class="dot"></span>
+                <span id="status-text">正在连接服务器...</span>
+            </div>
+        </header>
+
+        <main>
+            <section class="card config-section">
+                <h3><span class="icon">⚙️</span> 环境配置</h3>
+                <div class="input-group">
+                    <label for="adb-path">ADB 路径:</label>
+                    <input type="text" id="adb-path" placeholder="默认使用系统 PATH">
+                    <button id="save-config" class="btn secondary">保存</button>
+                </div>
+            </section>
+
+            <section class="card device-section">
+                <h3><span class="icon">📱</span> 设备列表</h3>
+                <div id="device-list-container">
+                    <p class="empty-msg">正在扫描设备...</p>
+                </div>
+            </section>
+
+            <section class="card actions-section">
+                <h3><span class="icon">🛠️</span> 核心功能</h3>
+                <div class="button-grid">
+                    <button onclick="runCommand('adb reboot')" class="btn primary">🔃 重启系统</button>
+                    <button onclick="runCommand('adb reboot recovery')" class="btn primary">🩹 Recovery</button>
+                    <button onclick="runCommand('adb reboot bootloader')" class="btn primary">⚡ Bootloader</button>
+                    <button onclick="runCommand('adb reboot sideload')" class="btn primary">📦 Sideload</button>
+                    <button onclick="runCommand('adb logcat -d')" class="btn accent">📋 Logcat</button>
+                    <button id="clear-log-btn" class="btn ghost">🧹 清空日志</button>
+                </div>
+            </section>
+
+            <section class="card console-section">
+                <h3><span class="icon">📄</span> 终端日志</h3>
+                <div id="console-output" class="console">
+                    <div class="line system">GHikari Web Console Ready.</div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

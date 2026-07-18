@@ -133,18 +133,11 @@ checker = ADBChecker()
 
 if checker.check_adb_availability():
     try:
-        # 执行 ui.py（使用当前 Python 解释器）
-        # Run ui.py (using the current Python interpreter)
-        result = subprocess.run(
-            [sys.executable, 'ui.py'],   # 使用 sys.executable 更可靠 / more reliable
-            capture_output=True,
-            text=True,
-            timeout=30
+        # 启动嵌入式 UI 窗口 / Start Embedded UI Window
+        print("Launching GHikari Toolbox UI...")
+        subprocess.run(
+            [sys.executable, 'ui.py']
         )
-        if result.returncode == 0:
-            print(result.stdout)
-        else:
-            print(f"ui.py 执行失败: {result.stderr}")
     except FileNotFoundError:
         print("can't find python or ui.py")
     except subprocess.TimeoutExpired:
