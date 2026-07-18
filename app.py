@@ -7,6 +7,7 @@ import json
 import sys
 import configparser
 import requests
+import shutil
 
 try:
     from flask import Flask, render_template
@@ -182,6 +183,19 @@ class BackendManager:
 
             if not cmd_args:
                 return "Error: Empty command"
+
+            # Check if binaries exist before running
+            executable = cmd_args[0]
+            if executable == 'adb' and self.config.ADB_PATH:
+                executable = self.config.ADB_PATH
+            elif executable == 'fastboot' and self.config.FASTBOOT_PATH:
+                executable = self.config.FASTBOOT_PATH
+            
+            # Simple redundancy: if the config path fails, try 'adb' from PATH
+            if not os.path.exists(executable) and not shutil.which(executable):
+                self.log_to_web(f"Warning: Executable {executable} not found. Trying fallback...", 'system')
+                if cmd_args[0] in ['adb', 'fastboot']:
+                    executable = cmd_args[0] # Fallback to system name
 
             # Internal commands
             if cmd_args[0].lower() in ['cls', 'clear']:

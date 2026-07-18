@@ -4,6 +4,7 @@ import sys
 import zipfile
 import urllib.request
 import shutil
+import time
 
 def get_venv_python():
     """Returns the path to the virtual environment's python interpreter if it exists."""
@@ -148,6 +149,11 @@ def setup_venv():
             print("Failed to create virtual environment.")
             return False
         
+        # Check Python version
+        if sys.version_info < (3, 7):
+            print(f"Error: Virtual environment python version too low: {sys.version}")
+            return False
+
         if check_requirements(venv_python):
             print("Dependencies already satisfied in venv.")
             return True
@@ -198,17 +204,33 @@ def check_and_install_scrcpy():
 
 def sync_requirements(python_exe):
     """Ensures all requirements are installed in the venv."""
-    if check_requirements(python_exe):
-        return True
+    print("Checking/Updating dependencies...")
+    
+    # Check if pip is available
+    try:
+        subprocess.run([python_exe, "-m", "pip", "--version"], capture_output=True, check=True)
+    except:
+        print("Error: pip not found in the target Python environment.")
+        return False
 
     if os.path.exists("requirements.txt"):
-        print("Checking/Updating dependencies...")
+        # First try normal install
         if run_pip(python_exe, ["install", "-r", "requirements.txt"]):
             return True
         else:
-            print("\nFailed to update dependencies via default PyPI.")
-            print("Suggestion: If you are in China, try using a mirror:")
-            print(f"  {sys.executable} -m pip install --python {python_exe} -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple")
+            print("\n[!] Failed to update dependencies via default PyPI.")
+            print("Trying domestic mirrors (China)...")
+            mirrors = [
+                "https://pypi.tuna.tsinghua.edu.cn/simple",
+                "https://pypi.mirrors.ustc.edu.cn/simple",
+                "https://mirror.baidu.com/pypi/simple"
+            ]
+            for mirror in mirrors:
+                print(f"Trying mirror: {mirror}")
+                if run_pip(python_exe, ["install", "-r", "requirements.txt", "-i", mirror]):
+                    return True
+            
+            print("\n[ERROR] All attempts to install dependencies failed.")
             return False
     return True
 
@@ -256,8 +278,25 @@ if __name__ == '__main__':
     try:
         print("Launching GHikari Toolbox Web Server...")
         # Run the app using the venv python
-        process = subprocess.run([python_exe, 'app.py'])
+        # Add basic retry/redundancy
+        max_retries = 3
+        for i in range(max_retries):
+            process = subprocess.run([python_exe, 'app.py'])
+            if process.returncode == 0:
+                break
+            else:
+                print(f"\n[!] Server exited with code {process.returncode}.")
+                if i < max_retries - 1:
+                    print(f"Retrying in 2 seconds... ({i+1}/{max_retries})")
+                    time.sleep(2)
+                else:
+                    print("Max retries reached. Exit.")
         sys.exit(process.returncode)
     except Exception as e:
         print(f"Failed to launch UI: {e}")
-        sys.exit(1)
+        # Final fallback: try system python if everything else fails
+        try:
+            print("Attempting emergency fallback to system Python...")
+            subprocess.run([sys.executable, 'app.py'])
+        except:
+            sys.exit(1)
