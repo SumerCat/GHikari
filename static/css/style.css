@@ -163,6 +163,7 @@ body {
     perspective: 1500px;
     position: relative;
     gap: 6px;
+    overflow: hidden;
 }
 
 header {
@@ -364,10 +365,27 @@ h3 {
 }
 
 /* Grid Layout for Cards */
-.config-section { grid-column: 1; grid-row: 1; }
+.config-section { 
+    grid-column: 1; 
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+}
 .device-section { grid-column: 1; grid-row: 2; overflow: hidden; }
-.actions-section { grid-column: 2; grid-row: 2; overflow: hidden; }
-.console-section { grid-column: 2; grid-row: 1; overflow: hidden; }
+.actions-section { 
+    grid-column: 2; 
+    grid-row: 2; 
+    overflow: hidden; 
+    display: flex;
+    flex-direction: column;
+}
+.console-section { 
+    grid-column: 2; 
+    grid-row: 1; 
+    overflow: hidden; 
+    display: flex;
+    flex-direction: column;
+}
 
 /* Input Styles */
 .input-group {
@@ -646,6 +664,10 @@ input[type="text"]:focus {
     background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="%2350fa7b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><path d="M6 8h.01"></path><path d="M10 8h.01"></path><path d="M14 8h.01"></path><path d="M18 8h.01"></path><path d="M8 12h.01"></path><path d="M12 12h.01"></path><path d="M16 12h.01"></path><path d="M7 16h10"></path></svg>');
 }
 
+.line.debug::before {
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="%23888888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>');
+}
+
 /* Suggestion List for Terminal */
 .terminal-input-area {
     position: relative;
@@ -880,6 +902,15 @@ body:hover #mouse-tracker { opacity: 1; }
     transform: translateY(20px);
 }
 
+.fb-tab-content {
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 .fastboot-row {
     display: flex;
     gap: 20px;
@@ -1091,4 +1122,7 @@ body:hover #mouse-tracker { opacity: 1; }
 .ai-config-grid {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
 }

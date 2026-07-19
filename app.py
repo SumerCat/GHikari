@@ -8,6 +8,8 @@ import sys
 import configparser
 import requests
 import shutil
+import asyncio
+import uuid
 
 try:
     from flask import Flask, render_template
@@ -37,6 +39,8 @@ import concurrent.futures
 import webbrowser
 import platform
 import socket
+import tkinter as tk
+from tkinter import filedialog
 
 # Ensure local bin/platform-tools is in PATH for any shell calls
 local_pt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "platform-tools")
@@ -53,6 +57,7 @@ class BackendManager:
         self.ui_config_path = os.path.join(os.path.dirname(__file__), 'config.conf')
         self.ui_config = self.load_ui_config()
         self.ai_config = self.load_ai_config()
+        self.moe_config = self.load_moe_config()
         self.tool_manager = ToolManager()
         self.selected_device = ""
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
@@ -113,12 +118,17 @@ class BackendManager:
             'api_key': '',
             'base_url': 'https://api.openai.com/v1',
             'model': 'gpt-3.5-turbo',
-            'system_prompt': '你是一个专业的 Android 调试助手，专注于 ADB 和 Fastboot 命令。请直接给出建议的命令，并简要说明作用。'
+            'system_prompt': '你是一个专业的 Android 调试助手，专注于 ADB 和 Fastboot 命令。请直接给出建议的命令，并简要说明作用。',
+            'voice': 'zh-CN-XiaoxiaoNeural'
         }
         
         for key, value in defaults.items():
             if key not in config['AI']:
                 config['AI'][key] = value
+        
+        # Ensure default voice if not set
+        if not config['AI']['voice']:
+             config['AI']['voice'] = 'zh-CN-XiaoxiaoNeural'
         
         return {k: v for k, v in config['AI'].items()}
 
@@ -136,6 +146,48 @@ class BackendManager:
         with open(self.ui_config_path, 'w', encoding='utf-8') as f:
             config.write(f)
         self.ai_config = {k: v for k, v in config['AI'].items()}
+
+    def load_moe_config(self):
+        config = configparser.ConfigParser(interpolation=None)
+        if os.path.exists(self.ui_config_path):
+            config.read(self.ui_config_path, encoding='utf-8')
+        
+        if 'MoeVoice' not in config:
+            config['MoeVoice'] = {}
+            
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        moe_exe = "MoeVoiceStudio.exe" if sys.platform == "win32" else "MoeVoiceStudio"
+        default_exe_path = os.path.join(current_dir, "bin", "MoeVoiceStudio", moe_exe)
+
+        defaults = {
+            'executable_path': default_exe_path if os.path.exists(default_exe_path) else '',
+            'model_path': '',
+            'speaker_id': '0'
+        }
+        
+        for key, value in defaults.items():
+            if key not in config['MoeVoice']:
+                config['MoeVoice'][key] = value
+            elif key == 'executable_path' and not config['MoeVoice'][key] and os.path.exists(default_exe_path):
+                # Auto-fill if it was empty but now exists
+                config['MoeVoice'][key] = default_exe_path
+        
+        return {k: v for k, v in config['MoeVoice'].items()}
+
+    def save_moe_config(self, new_config):
+        config = configparser.ConfigParser(interpolation=None)
+        if os.path.exists(self.ui_config_path):
+            config.read(self.ui_config_path, encoding='utf-8')
+        
+        if 'MoeVoice' not in config:
+            config['MoeVoice'] = {}
+            
+        for key, value in new_config.items():
+            config['MoeVoice'][key] = str(value)
+            
+        with open(self.ui_config_path, 'w', encoding='utf-8') as f:
+            config.write(f)
+        self.moe_config = {k: v for k, v in config['MoeVoice'].items()}
 
     def ask_ai(self, messages):
         if self.ai_config.get('enabled') != 'true':
@@ -168,12 +220,76 @@ class BackendManager:
         except Exception as e:
             return f"AI 请求失败: {str(e)}"
 
+    def executor_task(self, func, *args):
+        return self.executor.submit(func, *args)
+
+    async def generate_tts(self, text, _unused_voice):
+        """Generates TTS audio file using MoeVoiceStudio."""
+        temp_dir = os.path.join(os.path.dirname(__file__), 'static', 'temp_audio')
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+        
+        # Cleanup old files (older than 1 minute)
+        now = time.time()
+        for f in os.listdir(temp_dir):
+            fpath = os.path.join(temp_dir, f)
+            if os.path.isfile(fpath) and now - os.path.getmtime(fpath) > 60:
+                try:
+                    os.remove(fpath)
+                except:
+                    pass
+
+        # Clean text for TTS
+        clean_text = text.replace('adb ', 'A D B ').replace('fastboot ', 'fast boot ')
+        filename = f"{uuid.uuid4()}.wav"
+        filepath = os.path.join(temp_dir, filename)
+
+        exe_path = self.moe_config.get('executable_path')
+        model_path = self.moe_config.get('model_path')
+        speaker_id = self.moe_config.get('speaker_id', '0')
+
+        if not exe_path or not os.path.exists(exe_path):
+            self.log_to_web("MoeVoice: 未配置或找不到执行文件路径", "error")
+            return None
+
+        self.log_to_web(f"MoeVoice: 正在生成语音...", "debug")
+        
+        try:
+            # MoeVoiceStudio CLI example: ./MoeVoiceStudio --model model.pth --speaker 0 --text "hello" --out out.wav
+            # Note: The exact CLI args might vary depending on the version. 
+            # We assume a common pattern for such tools.
+            cmd = [
+                exe_path,
+                "--model", model_path,
+                "--speaker", speaker_id,
+                "--text", clean_text,
+                "--out", filepath
+            ]
+            
+            # Use subprocess to run the CLI
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode == 0:
+                self.log_to_web(f"MoeVoice: 语音生成完毕: {filename}", "debug")
+                return filename
+            else:
+                self.log_to_web(f"MoeVoice 错误: {stderr.decode()}", "error")
+                return None
+        except Exception as e:
+            self.log_to_web(f"MoeVoice 调用异常: {str(e)}", "error")
+            return None
+
     def log_to_web(self, message, type=''):
         """Pushes a log message to the UI via SocketIO."""
         print(f"LOG [{type}]: {message.strip()}")
         socketio.emit('log_update', {'message': message, 'type': type})
 
-    def execute_adb_command(self, args, is_device_check=False, callback_id=None):
+    def execute_adb_command(self, args, is_device_check=False, callback_id=None, cwd=None):
         """Executes an ADB command safely."""
         try:
             if isinstance(args, str):
@@ -247,7 +363,7 @@ Environment:
                 # or just use Popen without pipe for output if we don't need it.
                 # However, to keep it simple and consistent with execute_adb_command:
                 self.log_to_web("Starting scrcpy...", 'system')
-                subprocess.Popen(cmd_args)
+                subprocess.Popen(cmd_args, cwd=cwd)
                 if callback_id:
                     socketio.emit('command_complete', {'callback_id': callback_id, 'success': True})
                 return "scrcpy launched"
@@ -271,7 +387,8 @@ Environment:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                universal_newlines=True
+                universal_newlines=True,
+                cwd=cwd
             ) as process:
                 if not is_device_check:
                     self.current_process = process
@@ -302,6 +419,62 @@ Environment:
                 socketio.emit('command_complete', {'callback_id': callback_id, 'success': False})
             
             return error_msg
+
+    def xiaomi_flash(self, rom_path, mode, callback_id):
+        """Executes Xiaomi Flash logic (flash_all.bat/sh)."""
+        if not os.path.exists(rom_path):
+            self.log_to_web(f"Error: ROM 目录不存在: {rom_path}", "error")
+            if callback_id:
+                socketio.emit('command_complete', {'callback_id': callback_id, 'success': False})
+            return
+
+        # Map mode to script
+        script_base = "flash_all"
+        if mode == "keep_data":
+            script_base = "flash_all_except_data_storage"
+        elif mode == "lock":
+            script_base = "flash_all_lock"
+
+        ext = ".bat" if sys.platform == "win32" else ".sh"
+        script_name = f"{script_base}{ext}"
+        script_path = os.path.join(rom_path, script_name)
+
+        if not os.path.exists(script_path):
+            self.log_to_web(f"Error: 找不到脚本 {script_name} 在目录 {rom_path}", "error")
+            if callback_id:
+                socketio.emit('command_complete', {'callback_id': callback_id, 'success': False})
+            return
+
+        self.log_to_web(f"System: 开始小米线刷，模式: {mode}", "system")
+        
+        # Add current platform-tools to PATH for the script
+        env = os.environ.copy()
+        if self.config.FASTBOOT_PATH:
+            fb_dir = os.path.dirname(self.config.FASTBOOT_PATH)
+            env["PATH"] = fb_dir + os.pathsep + env["PATH"]
+
+        if sys.platform == "win32":
+            cmd = [script_path]
+        else:
+            # Ensure executable
+            os.chmod(script_path, 0o755)
+            cmd = ["bash", script_path]
+
+        self.execute_adb_command(cmd, False, callback_id, cwd=rom_path)
+
+    def get_device_info(self, device_id):
+        """Fetches detailed device info like FlashBox."""
+        info = {}
+        # Get product name
+        output = self.execute_adb_command(f"adb -s {device_id} shell getprop ro.product.model", is_device_check=True)
+        info['model'] = output.strip() if output else "Unknown"
+        
+        output = self.execute_adb_command(f"adb -s {device_id} shell getprop ro.product.name", is_device_check=True)
+        info['codename'] = output.strip() if output else "Unknown"
+        
+        # Check bootloader status (requires fastboot)
+        # Note: This is hard to get via ADB usually, mostly via fastboot getvar unlocked
+        return info
 
     def stop_current_process(self):
         """Terminates the currently running terminal process."""
@@ -334,6 +507,32 @@ Environment:
                 print(f"LOG [error]: Device monitor error: {e}")
             
             socketio.sleep(self.config.DEVICE_MONITOR_INTERVAL)
+
+    def pick_file(self, target_id):
+        """Opens a file dialog and returns the path."""
+        def open_dialog():
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            file_path = filedialog.askopenfilename()
+            root.destroy()
+            if file_path:
+                socketio.emit('file_picked', {'path': file_path, 'target_id': target_id})
+        
+        self.executor.submit(open_dialog)
+
+    def pick_directory(self, target_id):
+        """Opens a directory dialog and returns the path."""
+        def open_dialog():
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            dir_path = filedialog.askdirectory()
+            root.destroy()
+            if dir_path:
+                socketio.emit('file_picked', {'path': dir_path, 'target_id': target_id})
+        
+        self.executor.submit(open_dialog)
 
     def start_background_tasks(self):
         tools = self.tool_manager.check_all_tools(self.config.ADB_PATH, self.config.FASTBOOT_PATH)
@@ -395,6 +594,7 @@ def handle_connect():
     # Send UI config and AI config
     socketio.emit('ui_config', manager.ui_config)
     socketio.emit('ai_config', manager.ai_config)
+    socketio.emit('moe_config', manager.moe_config)
     
     # Send command suggestions (Legacy / Fallback)
     suggestions = [
@@ -443,14 +643,20 @@ def handle_update_config(data):
     # Handle UI config updates
     if 'ui' in data:
         manager.save_ui_config(data['ui'])
-        socketio.emit('ui_config', manager.ui_config, broadcast=True)
+        socketio.emit('ui_config', manager.ui_config)
         manager.log_to_web("System: UI configuration updated.", "system")
     
     # Handle AI config updates
     if 'ai' in data:
         manager.save_ai_config(data['ai'])
-        socketio.emit('ai_config', manager.ai_config, broadcast=True)
+        socketio.emit('ai_config', manager.ai_config)
         manager.log_to_web("System: AI configuration updated.", "system")
+
+    # Handle MoeVoice config updates
+    if 'moe' in data:
+        manager.save_moe_config(data['moe'])
+        socketio.emit('moe_config', manager.moe_config)
+        manager.log_to_web("System: MoeVoice configuration updated.", "system")
 
     # Handle ADB path update
     if 'adb_path' in data:
@@ -459,6 +665,22 @@ def handle_update_config(data):
         manager.log_to_web(f"System: ADB path updated to: {adb_path or 'system default'}", "system")
         tools = manager.tool_manager.check_all_tools(manager.config.ADB_PATH, manager.config.FASTBOOT_PATH)
         socketio.emit('tool_status', tools)
+
+
+@socketio.on('run_xiaomi_flash')
+def handle_run_xiaomi_flash(data):
+    rom_path = data.get('rom_path')
+    mode = data.get('mode', 'clean_all')
+    callback_id = data.get('callback_id')
+    manager.executor.submit(manager.xiaomi_flash, rom_path, mode, callback_id)
+
+
+@socketio.on('get_device_info')
+def handle_get_device_info(data):
+    device_id = data.get('device_id')
+    if device_id:
+        info = manager.get_device_info(device_id)
+        socketio.emit('device_info', info)
 
 
 @socketio.on('get_partitions')
@@ -491,9 +713,35 @@ def handle_ai_chat(data):
     
     def ai_task():
         response = manager.ask_ai(messages)
-        socketio.emit('ai_response', {'content': response})
+        audio_url = None
+        if manager.ai_config.get('enabled') == 'true':
+            try:
+                # Run async TTS generation in the same thread using a new loop
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                # MoeVoiceStudio doesn't use the voice param anymore but we keep the logic structure
+                filename = loop.run_until_complete(manager.generate_tts(response, None))
+                if filename:
+                    audio_url = f"/static/temp_audio/{filename}"
+                loop.close()
+            except Exception as e:
+                print(f"TTS generation failed: {e}")
+                
+        socketio.emit('ai_response', {'content': response, 'audio_url': audio_url})
         
     manager.executor.submit(ai_task)
+
+
+@socketio.on('pick_file')
+def handle_pick_file(data):
+    target_id = data.get('target_id')
+    manager.pick_file(target_id)
+
+
+@socketio.on('pick_directory')
+def handle_pick_directory(data):
+    target_id = data.get('target_id')
+    manager.pick_directory(target_id)
 
 
 def open_browser():

@@ -22,6 +22,18 @@ const partitionSelect = document.getElementById('partition-select');
 const refreshPartitionsBtn = document.getElementById('refresh-partitions');
 const flashFilePathInput = document.getElementById('flash-file-path');
 const startFlashBtn = document.getElementById('start-flash');
+
+// Xiaomi Flash Elements
+const fbPartitionTab = document.getElementById('fb-partition-tab');
+const fbXiaomiTab = document.getElementById('fb-xiaomi-tab');
+const fbToolsTab = document.getElementById('fb-tools-tab');
+const tabPartition = document.getElementById('tab-partition');
+const tabXiaomi = document.getElementById('tab-xiaomi');
+const tabTools = document.getElementById('tab-tools');
+const xiaomiRomPathInput = document.getElementById('xiaomi-rom-path');
+const xiaomiModeSelect = document.getElementById('xiaomi-mode-select');
+const startXiaomiFlashBtn = document.getElementById('start-xiaomi-flash');
+
 const terminalInput = document.getElementById('terminal-input');
 const stopCommandBtn = document.getElementById('stop-command-btn');
 const consoleSection = document.querySelector('.console-section');
@@ -32,6 +44,9 @@ const aiEnabledCheckbox = document.getElementById('ai-enabled');
 const aiApiKeyInput = document.getElementById('ai-api-key');
 const aiBaseUrlInput = document.getElementById('ai-base-url');
 const aiModelInput = document.getElementById('ai-model');
+const moeExePathInput = document.getElementById('moe-exe-path');
+const moeModelPathInput = document.getElementById('moe-model-path');
+const moeSpeakerIdInput = document.getElementById('moe-speaker-id');
 const saveAiConfigBtn = document.getElementById('save-ai-config');
 // AI History elements are also dynamic now
 
@@ -148,8 +163,12 @@ socket.on('ai_config', (config) => {
     applyAIConfig(config);
 });
 
+socket.on('moe_config', (config) => {
+    applyMoeConfig(config);
+});
+
     socket.on('ai_response', (data) => {
-        addAiMessage('assistant', data.content);
+        addAiMessage('assistant', data.content, true, data.audio_url);
         
         // Add to history
         if (chatMessages.length > 0 && chatMessages[chatMessages.length - 1].role === 'user') {
@@ -169,6 +188,14 @@ socket.on('partition_list', (partitions) => {
     updatePartitionList(partitions);
 });
 
+socket.on('file_picked', (data) => {
+    const input = document.getElementById(data.target_id);
+    if (input) {
+        input.value = data.path;
+        showToast('已选择路径', 'success');
+    }
+});
+
 socket.on('command_suggestions', (suggestions) => {
     commandSuggestions = suggestions;
 });
@@ -184,7 +211,17 @@ if (!document.getElementById('toast-container')) {
 function addLogLine(text, type = '') {
     const line = document.createElement('div');
     line.className = `line ${type}`;
-    line.innerText = text;
+    
+    // Add prefix for Debug logs
+    if (type === 'debug') {
+        line.innerText = `[DEBUG] ${text}`;
+        line.style.color = '#888';
+        line.style.fontSize = '11px';
+        line.style.opacity = '0.8';
+    } else {
+        line.innerText = text;
+    }
+    
     consoleOutput.appendChild(line);
     consoleOutput.scrollTop = consoleOutput.scrollHeight;
 }
@@ -202,6 +239,14 @@ function showToast(message, type = 'info') {
         toast.style.opacity = '0';
         setTimeout(() => toast.remove(), 300);
     }, 3000);
+}
+
+function pickFile(targetId) {
+    socket.emit('pick_file', { target_id: targetId });
+}
+
+function pickDirectory(targetId) {
+    socket.emit('pick_directory', { target_id: targetId });
 }
 
 function saveConversationHistory() {
@@ -680,6 +725,12 @@ function applyAIConfig(config) {
     if (aiModelInput) aiModelInput.value = config.model || '';
 }
 
+function applyMoeConfig(config) {
+    if (moeExePathInput) moeExePathInput.value = config.executable_path || '';
+    if (moeModelPathInput) moeModelPathInput.value = config.model_path || '';
+    if (moeSpeakerIdInput) moeSpeakerIdInput.value = config.speaker_id || '0';
+}
+
 function toggleAiChat(show) {
     const aiPanel = document.getElementById('waifu-ai-panel');
     if (!aiPanel) return;
@@ -701,7 +752,7 @@ function toggleAiChat(show) {
     }
 }
 
-function addAiMessage(role, content, shouldSpeak = true) {
+function addAiMessage(role, content, shouldSpeak = true, audioUrl = null) {
     const aiMessages = document.getElementById('ai-chat-messages');
     if (!aiMessages) return;
 
@@ -732,7 +783,7 @@ function addAiMessage(role, content, shouldSpeak = true) {
         const sendAiMsgBtn = document.getElementById('send-ai-msg');
         if (sendAiMsgBtn) sendAiMsgBtn.classList.remove('loading');
         
-        // Character speaks AI response
+        // Character speaks AI response (Visual + Voice)
         if (shouldSpeak) {
             if (typeof showMessage === 'function') {
                 showMessage(content, 5000, 9);
@@ -743,6 +794,9 @@ function addAiMessage(role, content, shouldSpeak = true) {
                     tips.style.opacity = 1;
                     setTimeout(() => { tips.style.opacity = 0; }, 5000);
                 }
+            }
+            if (audioUrl) {
+                playAudio(audioUrl);
             }
         }
     } else if (role === 'user') {
@@ -760,6 +814,20 @@ function addAiMessage(role, content, shouldSpeak = true) {
             }
         }
     }
+}
+
+/**
+ * Plays audio from URL
+ * @param {string} url 
+ */
+let currentAudio = null;
+function playAudio(url) {
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+    }
+    currentAudio = new Audio(url);
+    currentAudio.play().catch(e => console.error("Audio play failed:", e));
 }
 
 function sendAiMessage() {
@@ -832,10 +900,41 @@ function toggleFastbootPanel(show) {
         socket.emit('get_partitions');
         fastbootToggle.classList.add('primary');
     } else {
+        fastbootPanel.classList.remove('minimized'); // Force reset to first tab if needed? No, just hide
         fastbootPanel.classList.add('minimized');
         fastbootToggle.classList.remove('primary');
     }
 }
+
+function switchFbTab(tabName) {
+    const tabs = ['partition', 'xiaomi', 'tools'];
+    tabs.forEach(t => {
+        const btn = document.getElementById(`fb-${t}-tab`);
+        const content = document.getElementById(`tab-${t}`);
+        if (t === tabName) {
+            btn.classList.add('active');
+            btn.classList.remove('ghost');
+            content.style.display = 'block';
+        } else {
+            btn.classList.remove('active');
+            btn.classList.add('ghost');
+            content.style.display = 'none';
+        }
+    });
+    
+    const hint = document.getElementById('fb-hint-text');
+    if (tabName === 'xiaomi') {
+        hint.innerText = '小米线刷需要 ROM 目录内包含正确的 .bat/.sh 脚本。';
+    } else if (tabName === 'tools') {
+        hint.innerText = '常用 Fastboot 维护与信息查询工具。';
+    } else {
+        hint.innerText = '请确保设备已进入 Fastboot 模式并连接。';
+    }
+}
+
+if (fbPartitionTab) fbPartitionTab.onclick = () => switchFbTab('partition');
+if (fbXiaomiTab) fbXiaomiTab.onclick = () => switchFbTab('xiaomi');
+if (fbToolsTab) fbToolsTab.onclick = () => switchFbTab('tools');
 
 function updatePartitionList(partitions) {
     partitionSelect.innerHTML = '';
@@ -886,6 +985,32 @@ startFlashBtn.addEventListener('click', () => {
     }
 });
 
+if (startXiaomiFlashBtn) {
+    startXiaomiFlashBtn.addEventListener('click', () => {
+        const romPath = xiaomiRomPathInput.value.trim();
+        const mode = xiaomiModeSelect.value;
+        
+        if (!romPath) {
+            showToast('请选择 ROM 目录', 'error');
+            return;
+        }
+        
+        const modeText = xiaomiModeSelect.options[xiaomiModeSelect.selectedIndex].text;
+        if (confirm(`确定要开始小米线刷吗？\n模式: ${modeText}\n路径: ${romPath}`)) {
+            const callbackId = 'mi_flash_' + Date.now();
+            startXiaomiFlashBtn.classList.add('loading');
+            activeCallbacks.set(callbackId, startXiaomiFlashBtn);
+            
+            socket.emit('run_xiaomi_flash', {
+                rom_path: romPath,
+                mode: mode,
+                callback_id: callbackId
+            });
+            addLogLine(`System: 正在启动小米线刷 (${modeText})...`, 'system');
+        }
+    });
+}
+
 // Drag and Drop for file path
 flashFilePathInput.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -916,14 +1041,19 @@ flashFilePathInput.addEventListener('drop', (e) => {
 aiChatToggle.addEventListener('click', () => toggleAiChat());
 
 saveAiConfigBtn.addEventListener('click', () => {
-    const config = {
+    const aiConfig = {
         enabled: aiEnabledCheckbox.checked.toString(),
         api_key: aiApiKeyInput.value.trim(),
         base_url: aiBaseUrlInput.value.trim(),
         model: aiModelInput.value.trim()
     };
-    socket.emit('update_config', { ai: config });
-    showToast('AI 配置已尝试保存', 'info');
+    const moeConfig = {
+        executable_path: moeExePathInput.value.trim(),
+        model_path: moeModelPathInput.value.trim(),
+        speaker_id: moeSpeakerIdInput.value.trim()
+    };
+    socket.emit('update_config', { ai: aiConfig, moe: moeConfig });
+    showToast('AI 与 MoeVoice 配置已尝试保存', 'info');
 });
 
 // Initialize

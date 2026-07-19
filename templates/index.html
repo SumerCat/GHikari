@@ -62,6 +62,21 @@
                     <input type="text" id="ai-api-key" placeholder="API Key" style="margin-top: 8px;">
                     <input type="text" id="ai-base-url" placeholder="Base URL (e.g. https://api.openai.com/v1)" style="margin-top: 8px;">
                     <input type="text" id="ai-model" placeholder="Model (e.g. gpt-3.5-turbo)" style="margin-top: 8px;">
+                    <div id="moe-voice-config" style="margin-top: 8px;">
+                        <div class="input-group">
+                            <input type="text" id="moe-exe-path" placeholder="MoeVoice 执行文件路径" style="flex: 1;">
+                            <button onclick="pickFile('moe-exe-path')" class="btn ghost btn-small" title="选择文件">
+                                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            </button>
+                        </div>
+                        <div class="input-group" style="margin-top: 8px;">
+                            <input type="text" id="moe-model-path" placeholder="模型路径 (.pth)" style="flex: 1;">
+                            <button onclick="pickFile('moe-model-path')" class="btn ghost btn-small" title="选择文件">
+                                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            </button>
+                        </div>
+                        <input type="text" id="moe-speaker-id" placeholder="说话人 ID (默认 0)" style="margin-top: 8px; width: 100%;">
+                    </div>
                     <button id="save-ai-config" class="btn secondary btn-small" style="margin-top: 8px; width: 100%;">保存 AI 配置</button>
                 </div>
             </section>
@@ -124,34 +139,86 @@
 
                 <!-- Integrated Fastboot Section -->
                 <div id="fastboot-panel" class="fastboot-section minimized">
-                    <div class="editor-controls" style="margin-top: 20px; justify-content: flex-end;">
+                    <div class="editor-controls" style="margin-top: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;">
+                        <button id="fb-partition-tab" class="btn ghost btn-small active">分区刷写</button>
+                        <button id="fb-xiaomi-tab" class="btn ghost btn-small">小米线刷</button>
+                        <button id="fb-tools-tab" class="btn ghost btn-small">刷机工具</button>
+                        <div style="flex:1"></div>
                         <button id="close-fastboot" class="btn ghost btn-small">
                             <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
                             收起面板
                         </button>
                     </div>
-                    <div class="fastboot-row">
-                        <div class="control-item">
-                            <label>目标分区</label>
-                            <div class="input-group">
-                                <select id="partition-select" class="custom-select">
-                                    <option value="">等待加载...</option>
-                                </select>
-                                <button id="refresh-partitions" class="btn ghost btn-small" title="刷新分区">
-                                    <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                                </button>
+
+                    <!-- Partition Flash Tab -->
+                    <div id="tab-partition" class="fb-tab-content">
+                        <div class="fastboot-row" style="margin-top: 15px;">
+                            <div class="control-item">
+                                <label>目标分区</label>
+                                <div class="input-group">
+                                    <select id="partition-select" class="custom-select">
+                                        <option value="">等待加载...</option>
+                                    </select>
+                                    <button id="refresh-partitions" class="btn ghost btn-small" title="刷新分区">
+                                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="control-item" style="flex: 2;">
+                                <label>镜像文件 (.img / .bin)</label>
+                                <div class="input-group">
+                                    <input type="text" id="flash-file-path" placeholder="输入或粘贴文件完整路径" style="flex: 1;">
+                                    <button onclick="pickFile('flash-file-path')" class="btn ghost btn-small" title="选择文件">
+                                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="flash-actions">
+                                <button id="start-flash" class="btn primary" style="width: 120px;">确认刷写</button>
                             </div>
                         </div>
-                        <div class="control-item" style="flex: 2;">
-                            <label>镜像文件 (.img / .bin)</label>
-                            <input type="text" id="flash-file-path" placeholder="输入或粘贴文件完整路径">
-                        </div>
-                        <div class="flash-actions">
-                            <button id="start-flash" class="btn primary" style="width: 120px;">确认刷写</button>
+                    </div>
+
+                    <!-- Xiaomi Flash Tab -->
+                    <div id="tab-xiaomi" class="fb-tab-content" style="display: none;">
+                        <div class="fastboot-row" style="margin-top: 15px;">
+                            <div class="control-item" style="flex: 2;">
+                                <label>ROM 目录 (包含 flash_all 脚本)</label>
+                                <div class="input-group">
+                                    <input type="text" id="xiaomi-rom-path" placeholder="选择线刷包解压后的目录" style="flex: 1;">
+                                    <button onclick="pickDirectory('xiaomi-rom-path')" class="btn ghost btn-small" title="选择目录">
+                                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="control-item">
+                                <label>刷机模式</label>
+                                <select id="xiaomi-mode-select" class="custom-select">
+                                    <option value="clean_all">全部删除</option>
+                                    <option value="keep_data">保留数据</option>
+                                    <option value="lock">全部删除并上锁</option>
+                                </select>
+                            </div>
+                            <div class="flash-actions">
+                                <button id="start-xiaomi-flash" class="btn primary" style="width: 120px;">开始线刷</button>
+                            </div>
                         </div>
                     </div>
+
+                    <!-- Flash Tools Tab -->
+                    <div id="tab-tools" class="fb-tab-content" style="display: none;">
+                        <div class="button-grid" style="margin-top: 15px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));">
+                            <button onclick="runCommand('fastboot oem device-info', this)" class="btn secondary">BL 锁状态</button>
+                            <button onclick="runCommand('fastboot getvar product', this)" class="btn secondary">查询代号</button>
+                            <button onclick="runCommand('fastboot getvar anti', this)" class="btn secondary">防回滚等级</button>
+                            <button onclick="runCommand('fastboot erase efs', this)" class="btn accent">擦除 EFS</button>
+                            <button onclick="runCommand('fastboot format userdata', this)" class="btn accent">格式化 Data</button>
+                            <button onclick="runCommand('fastboot oem edl', this)" class="btn primary">进入 EDL (9008)</button>
+                        </div>
+                    </div>
+
                     <div class="sidebar-footer" style="margin-top: 10px;">
-                        <small>请确保镜像版本正确且设备已连接。</small>
+                        <small id="fb-hint-text">请确保设备已进入 Fastboot 模式并连接。</small>
                     </div>
                 </div>
             </section>
